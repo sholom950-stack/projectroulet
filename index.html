@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Рулетка</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+:root{
+  --bg:#0e1f19; --panel:#16302600; --felt:#143d2e; --line:#2a5a46;
+  --text:#f2ede0; --muted:#9db8aa; --gold:#e3b64f; --red:#c8342f; --black:#16191c; --green:#1f8a4c;
+  color-scheme:dark;
+}
+*{box-sizing:border-box;margin:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%}
+body{background:var(--bg);color:var(--text);font:16px/1.4 -apple-system,"Segoe UI",Roboto,sans-serif;
+  padding:env(safe-area-inset-top,0) 14px calc(env(safe-area-inset-bottom,0) + 14px);
+  display:flex;flex-direction:column;gap:12px;max-width:480px;margin:0 auto;user-select:none}
+header{display:flex;justify-content:space-between;align-items:center;padding-top:12px}
+.bal{font-size:26px;font-weight:700;letter-spacing:-.5px}
+.bal small{display:block;font-size:12px;font-weight:400;color:var(--muted);letter-spacing:0}
+.buy{background:var(--gold);color:#2a1d00;border:0;border-radius:12px;padding:10px 14px;font-weight:700;font-size:14px}
+.stage{position:relative;display:flex;justify-content:center;padding:10px 0}
+.wheelbox{position:relative;width:min(78vw,330px);aspect-ratio:1}
+#wheel{width:100%;height:100%;border-radius:50%;transition:transform 4.6s cubic-bezier(.12,.62,.08,1);
+  box-shadow:0 0 0 6px #3a2a12,0 0 0 9px var(--gold),0 12px 30px #0008}
+.pointer{position:absolute;top:-12px;left:50%;width:0;height:0;transform:translateX(-50%);
+  border-left:11px solid transparent;border-right:11px solid transparent;border-top:20px solid var(--gold);z-index:2;
+  filter:drop-shadow(0 2px 2px #0008)}
+.hub{position:absolute;inset:36%;border-radius:50%;background:radial-gradient(#3a2a12,#1b1308);
+  display:grid;place-items:center;font-size:34px;font-weight:800;border:3px solid var(--gold)}
+.hub.r{color:#ff6b64}.hub.g{color:#4fd98b}.hub.b{color:#fff}
+.last{display:flex;gap:6px;justify-content:center;min-height:28px}
+.last span{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;font-size:12px;font-weight:700;color:#fff}
+.bets{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+.bet{border:2px solid var(--line);background:var(--felt);color:var(--text);border-radius:14px;padding:14px 8px;
+  font-size:16px;font-weight:700;display:flex;flex-direction:column;align-items:center;gap:2px}
+.bet small{font-size:12px;font-weight:400;color:var(--muted)}
+.bet.red{background:#4a1614}.bet.black{background:#15181a}.bet.zero{background:#124a2a;grid-column:span 2}
+.bet.on{border-color:var(--gold);box-shadow:0 0 0 2px var(--gold) inset}
+.bet:disabled{opacity:.5}
+.stakes{display:flex;gap:8px;align-items:center}
+.stakes label{color:var(--muted);font-size:13px;margin-right:auto}
+.chip{min-width:52px;padding:9px 0;border-radius:999px;border:2px dashed var(--gold);background:transparent;color:var(--gold);font-weight:700}
+.chip.on{background:var(--gold);color:#2a1d00;border-style:solid}
+.spin{background:var(--green);color:#fff;border:0;border-radius:16px;padding:17px;font-size:18px;font-weight:800}
+.spin:disabled{opacity:.45}
+.msg{text-align:center;min-height:24px;font-weight:600}
+.msg.win{color:#6fe3a0}.msg.lose{color:#ff8e88}
+.note{text-align:center;font-size:11px;color:var(--muted)}
+:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
+@media (prefers-reduced-motion:reduce){#wheel{transition-duration:.01s}}
+</style>
+</head>
+<body>
+<header>
+  <div class="bal"><span id="bal">0</span><small>фишек</small></div>
+  <button class="buy" id="buy">⭐ Купить фишки</button>
+</header>
+
+<div class="stage">
+  <div class="wheelbox">
+    <div class="pointer"></div>
+    <canvas id="wheel" width="660" height="660"></canvas>
+    <div class="hub" id="hub">–</div>
+  </div>
+</div>
+<div class="last" id="last"></div>
+<div class="msg" id="msg">Выберите ставку и крутите</div>
+
+<div class="bets" id="bets">
+  <button class="bet red" data-b="red">Красное<small>выплата x2</small></button>
+  <button class="bet black" data-b="black">Чёрное<small>выплата x2</small></button>
+  <button class="bet" data-b="even">Чётное<small>выплата x2</small></button>
+  <button class="bet" data-b="odd">Нечётное<small>выплата x2</small></button>
+  <button class="bet zero" data-b="zero">Зеро<small>выплата x36</small></button>
+</div>
+
+<div class="stakes"><label>Ставка</label>
+  <button class="chip" data-s="5">5</button><button class="chip on" data-s="10">10</button>
+  <button class="chip" data-s="25">25</button><button class="chip" data-s="50">50</button>
+</div>
+<button class="spin" id="spin" disabled>Крутить</button>
+<div class="note" id="note"></div>
+
+<script>
+/* ===== НАСТРОЙКИ ===== */
+// Укажите адрес вашего сервера (бота). Пока пусто — работает демо-режим без реальных Stars.
+const API_URL = "/api";       // "" = демо-режим без сервера
+const PACK_CHIPS = 50;        // сколько фишек даёт пакет (демо)
+
+/* ===== TELEGRAM ===== */
+const tg = window.Telegram && Telegram.WebApp;
+if (tg){ tg.ready(); tg.expand(); }
+const initData = tg ? tg.initData : "";
+
+/* ===== ДАННЫЕ ===== */
+const ORDER=[0,32,15,19,4,21,2,25,17,34,6,27,13,36,11,30,8,23,10,5,24,16,33,1,20,14,31,9,22,18,29,7,28,12,35,3,26];
+const RED=new Set([1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36]);
+const col=n=>n===0?"g":RED.has(n)?"r":"b";
+const COLORS={r:"#c8342f",b:"#16191c",g:"#1f8a4c"};
+const SEG=360/ORDER.length;
+
+let balance=100, stake=10, bet=null, spinning=false, rot=0, history=[];
+if(!API_URL){ try{ const s=localStorage.getItem("rl_demo"); if(s) balance=+s||0; }catch(e){} } else balance=0;
+
+const $=id=>document.getElementById(id);
+const save=()=>{ try{localStorage.setItem("rl_demo",balance)}catch(e){} };
+
+/* ===== КОЛЕСО ===== */
+(function draw(){
+  const c=$("wheel"), x=c.getContext("2d"), R=330, cx=R, cy=R;
+  ORDER.forEach((n,i)=>{
+    const a0=(i*SEG-90-SEG/2)*Math.PI/180, a1=a0+SEG*Math.PI/180;
+    x.beginPath(); x.moveTo(cx,cy); x.arc(cx,cy,R-4,a0,a1); x.closePath();
+    x.fillStyle=COLORS[col(n)]; x.fill(); x.strokeStyle="#e3b64f55"; x.lineWidth=2; x.stroke();
+    x.save(); x.translate(cx,cy); x.rotate((a0+a1)/2); x.translate(R-48,0); x.rotate(Math.PI/2);
+    x.fillStyle="#fff"; x.font="bold 30px sans-serif"; x.textAlign="center"; x.textBaseline="middle";
+    x.fillText(n,0,0); x.restore();
+  });
+  x.beginPath(); x.arc(cx,cy,R*.45,0,7); x.fillStyle="#0e1f19"; x.fill();
+})();
+
+/* ===== UI ===== */
+function render(){
+  $("bal").textContent=balance;
+  $("spin").disabled=spinning||!bet||balance<stake;
+  document.querySelectorAll(".bet").forEach(b=>{b.classList.toggle("on",b.dataset.b===bet);b.disabled=spinning});
+  document.querySelectorAll(".chip").forEach(b=>b.classList.toggle("on",+b.dataset.s===stake));
+  $("last").innerHTML=history.slice(0,8).map(n=>`<span style="background:${COLORS[col(n)]}">${n}</span>`).join("");
+}
+document.querySelectorAll(".bet").forEach(b=>b.onclick=()=>{bet=b.dataset.b;render();hap()});
+document.querySelectorAll(".chip").forEach(b=>b.onclick=()=>{stake=+b.dataset.s;render();hap()});
+function hap(t="light"){ try{tg&&tg.HapticFeedback.impactOccurred(t)}catch(e){} }
+
+function wins(n){
+  if(bet==="zero") return n===0?36:0;
+  if(n===0) return 0;
+  if(bet==="red") return RED.has(n)?2:0;
+  if(bet==="black") return !RED.has(n)?2:0;
+  if(bet==="even") return n%2===0?2:0;
+  if(bet==="odd") return n%2===1?2:0;
+  return 0;
+}
+
+/* Получение результата: с сервера (честно) или локально (демо) */
+async function getResult(){
+  if(API_URL){
+    const r=await fetch(API_URL+"/spin",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({initData,bet,stake})});
+    if(!r.ok) throw new Error((await r.json()).detail||"Ошибка сервера");
+    return r.json();            // ожидается { number, balance }
+  }
+  const a=new Uint32Array(1); crypto.getRandomValues(a);
+  const number=a[0]%37, mult=wins(number);
+  return {number, balance:balance-stake+stake*mult};
+}
+
+$("spin").onclick=async()=>{
+  if(spinning||!bet||balance<stake) return;
+  spinning=true; render(); hap("medium");
+  $("msg").className="msg"; $("msg").textContent="Крутим…"; $("hub").textContent="…"; $("hub").className="hub";
+  let res;
+  try{ res=await getResult(); }
+  catch(e){ spinning=false; $("msg").textContent=e.message; render(); return; }
+
+  const i=ORDER.indexOf(res.number);
+  const target=-(i*SEG);
+  rot=Math.ceil((rot-target)/360+6)*360+target;      // минимум 6 оборотов вперёд
+  $("wheel").style.transform=`rotate(${rot}deg)`;
+
+  setTimeout(()=>{
+    const n=res.number, mult=wins(n), c=col(n);
+    balance=res.balance; save(); history.unshift(n); spinning=false;
+    $("hub").textContent=n; $("hub").className="hub "+c;
+    if(mult){ $("msg").className="msg win"; $("msg").textContent=`Выигрыш +${stake*mult-stake}`; try{tg&&tg.HapticFeedback.notificationOccurred("success")}catch(e){} }
+    else{ $("msg").className="msg lose"; $("msg").textContent=`Проигрыш −${stake}`; try{tg&&tg.HapticFeedback.notificationOccurred("error")}catch(e){} }
+    render();
+  },4700);
+};
+
+/* ===== ПОКУПКА ЗА STARS ===== */
+$("buy").onclick=async()=>{
+  if(API_URL && tg){
+    try{
+      const r=await fetch(API_URL+"/invoice",{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({initData})});
+      const {link}=await r.json();          // сервер: bot.create_invoice_link(..., currency="XTR")
+      tg.openInvoice(link,async status=>{
+        if(status==="paid") refreshBalance(true);
+      });
+    }catch(e){ $("msg").textContent="Не удалось открыть оплату"; }
+  }else{
+    balance+=PACK_CHIPS; save(); render();
+    $("msg").className="msg"; $("msg").textContent=`Демо: +${PACK_CHIPS} фишек`;
+  }
+};
+
+async function refreshBalance(afterPay){
+  const before=balance;
+  for(let k=0;k<(afterPay?8:1);k++){
+    try{
+      const r=await fetch(API_URL+"/balance",{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({initData})});
+      if(!r.ok) throw new Error((await r.json()).detail);
+      balance=(await r.json()).balance; render();
+      if(!afterPay||balance>before) return;
+    }catch(e){ $("msg").textContent=e.message||"Нет связи с сервером"; if(!afterPay) return; }
+    await new Promise(r=>setTimeout(r,1000));
+  }
+}
+$("note").textContent=API_URL?"":"Демо-режим: фишки не связаны с реальными Stars";
+render();
+if(API_URL) refreshBalance(false);
+</script>
+</body>
+</html>
