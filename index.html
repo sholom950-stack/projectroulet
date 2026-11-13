@@ -148,8 +148,9 @@ async function getResult(){
   if(API_URL){
     const r=await fetch(API_URL+"/spin",{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({initData,bet,stake})});
-    if(!r.ok) throw new Error((await r.json()).detail||"Ошибка сервера");
-    return r.json();            // ожидается { number, balance }
+    const t=await r.text(); let d={}; try{d=JSON.parse(t)}catch(e){}
+    if(!r.ok) throw new Error(d.detail||("Сервер недоступен ("+r.status+"). Подождите минуту и повторите"));
+    return d;            // ожидается { number, balance }
   }
   const a=new Uint32Array(1); crypto.getRandomValues(a);
   const number=a[0]%37, mult=wins(number);
@@ -185,11 +186,12 @@ $("buy").onclick=async()=>{
     try{
       const r=await fetch(API_URL+"/invoice",{method:"POST",headers:{"Content-Type":"application/json"},
         body:JSON.stringify({initData})});
-      const {link}=await r.json();          // сервер: bot.create_invoice_link(..., currency="XTR")
-      tg.openInvoice(link,async status=>{
+      const t=await r.text(); let d={}; try{d=JSON.parse(t)}catch(e){}
+      if(!r.ok) throw new Error(d.detail||("Сервер недоступен ("+r.status+")"));
+      tg.openInvoice(d.link,async status=>{
         if(status==="paid") refreshBalance(true);
       });
-    }catch(e){ $("msg").textContent="Не удалось открыть оплату"; }
+    }catch(e){ $("msg").textContent=e.message||"Не удалось открыть оплату"; }
   }else{
     balance+=PACK_CHIPS; save(); render();
     $("msg").className="msg"; $("msg").textContent=`Демо: +${PACK_CHIPS} фишек`;
@@ -202,8 +204,9 @@ async function refreshBalance(afterPay){
     try{
       const r=await fetch(API_URL+"/balance",{method:"POST",headers:{"Content-Type":"application/json"},
         body:JSON.stringify({initData})});
-      if(!r.ok) throw new Error((await r.json()).detail);
-      balance=(await r.json()).balance; render();
+      const t=await r.text(); let d={}; try{d=JSON.parse(t)}catch(e){}
+      if(!r.ok) throw new Error(d.detail||("Сервер недоступен ("+r.status+")"));
+      balance=d.balance; render();
       if(!afterPay||balance>before) return;
     }catch(e){ $("msg").textContent=e.message||"Нет связи с сервером"; if(!afterPay) return; }
     await new Promise(r=>setTimeout(r,1000));
