@@ -182,6 +182,7 @@ $("spin").onclick=async()=>{
 
 /* ===== ПОКУПКА ЗА STARS ===== */
 $("buy").onclick=async()=>{
+  if(API_URL && !initData){ $("msg").className="msg lose"; $("msg").textContent="Откройте игру кнопкой «🎰 Играть» в боте, не по ссылке"; return; }
   if(API_URL && tg){
     try{
       const r=await fetch(API_URL+"/invoice",{method:"POST",headers:{"Content-Type":"application/json"},
@@ -212,7 +213,7 @@ async function refreshBalance(afterPay){
     await new Promise(r=>setTimeout(r,1000));
   }
 }
-$("note").textContent=API_URL?"":"Демо-режим: фишки не связаны с реальными Stars";
+$("note").textContent=(API_URL?"":"Демо-режим: фишки не связаны с реальными Stars ")+"v4";
 render();
 if(API_URL) refreshBalance(false);
 </script>

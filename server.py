@@ -29,8 +29,8 @@ from aiogram.types import (
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 
-BOT_TOKEN = os.environ["BOT_TOKEN"]
-WEBAPP_URL = os.environ["WEBAPP_URL"]
+BOT_TOKEN = os.environ["BOT_TOKEN"].strip()
+WEBAPP_URL = os.environ["WEBAPP_URL"].strip()
 ADMIN_ID = int(os.environ.get("ADMIN_ID", "0"))
 STARS_PER_PACK = int(os.environ.get("STARS_PER_PACK", "50"))   # цена пакета в Stars
 CHIPS_PER_PACK = int(os.environ.get("CHIPS_PER_PACK", "50"))   # фишек за пакет
@@ -128,7 +128,8 @@ def verify_init_data(init_data: str) -> int:
         if time.time() - int(pairs["auth_date"]) > 86400:
             raise ValueError("expired")
         return int(json.loads(pairs["user"])["id"])
-    except Exception:
+    except Exception as e:
+        print("initData check failed:", repr(e), "| initData length:", len(init_data or ""), flush=True)
         raise HTTPException(401, "Откройте приложение через Telegram")
 
 
@@ -192,7 +193,7 @@ app = FastAPI(lifespan=lifespan)
 
 @app.get("/")
 async def index():
-    return FileResponse("index.html")
+    return FileResponse("index.html", headers={"Cache-Control": "no-store"})
 
 
 @app.post("/api/balance")
@@ -204,13 +205,17 @@ async def api_balance(req: Request):
 @app.post("/api/invoice")
 async def api_invoice(req: Request):
     uid = verify_init_data((await req.json()).get("initData", ""))
-    link = await bot.create_invoice_link(
-        title="Пакет фишек",
-        description=f"{CHIPS_PER_PACK} игровых фишек для рулетки",
-        payload=f"chips:{uid}",
-        currency="XTR",
-        prices=[LabeledPrice(label="Фишки", amount=STARS_PER_PACK)],
-    )
+    try:
+        link = await bot.create_invoice_link(
+            title="Пакет фишек",
+            description=f"{CHIPS_PER_PACK} игровых фишек для рулетки",
+            payload=f"chips:{uid}",
+            currency="XTR",
+            prices=[LabeledPrice(label="Фишки", amount=STARS_PER_PACK)],
+        )
+    except Exception as e:
+        print("create_invoice_link failed:", repr(e), flush=True)
+        raise HTTPException(500, f"Telegram не создал счёт: {e}")
     return {"link": link}
 
 
@@ -226,3 +231,8 @@ async def api_spin(req: Request):
         raise HTTPException(400, "Недостаточно фишек")
     number, balance = result
     return {"number": number, "balance": balance}
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", 8000)))
